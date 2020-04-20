@@ -1,0 +1,1102 @@
+
+***  http://planetmvs.com/unxmit/file005.txt
+:READ CBTTAPE EXEC
+/* **************************************************************** */
+/* *     Module Name: CBTTAPE EXEC                                * */
+/* *                                                              * */
+/* *     Author:        George Shedlock Jr.                       * */
+/* *                    4479 SW 159th St Rd                       * */
+/* *                    Ocala, FL 34473                           * */
+/* *                                                              * */
+/* *     Version:       1.1 (I don't like version 1.0 since it    * */
+/* *                    implies a lot of bugs are still in there  * */
+/* *                    waiting to be discovered.)                * */
+/* *                                                              * */
+/* *     Purpose:       This REXX EXEC was written because I made * */
+/* *                    the mistake of telling Sam Golub that it  * */
+/* *                    wouldn't be hard to write something like  * */
+/* *                    this since I had most of the pieces and   * */
+/* *                    just had to put them together. Well, here * */
+/* *                    it is... 3 years, 1100 miles (I moved     * */
+/* *                    from New Jersey), and a lot of deserved   * */
+/* *                    nagging from Sam. If this is of some      * */
+/* *                    value to you, great. If this is of NO     * */
+/* *                    value to you, you're welcome to write     * */
+/* *                    you're welcome to write something of      * */
+/* *                    your own. Feel free to modify this to     * */
+/* *                    modify this to suit your needs. If you    * */
+/* *                    modify this, please send me a copy so     * */
+/* *                    that it can be shared with others.        * */
+/* *                                                              * */
+/* *                    This EXEC will allow the VM site a way    * */
+/* *                    to process the CBT tape in the native     * */
+/* *                    VM environment. This is mainly because    * */
+/* *                    there are a lot of really good programs,  * */
+/* *                    macros, etc on this tape. Well, OK        * */
+/* *                    there are some so-so programs also, but   * */
+/* *                    most of it is good. Included in this      * */
+/* *                    file is a program I found in my travels   * */
+/* *                    on the Internet some years ago. If I      * */
+/* *                    could remember who wrote it or where I    * */
+/* *                    found it, I would gladly give the proper  * */
+/* *                    credit. This program is the IEBCOPY       * */
+/* *                    program. Although it will only load or    * */
+/* *                    list the modules from the tape, it is     * */
+/* *                    still a good little utility.              * */
+/* *                                                              * */
+/* *     Initial setup:                                           * */
+/* *         SP PUN * CL K                                        * */
+/* *         TAPE REW                                             * */
+/* *         TAPE FSF 4                                           * */
+/* *         FI INMOVE TAP1 (RECFM FB LRECL 80 BLOCK 80           * */
+/* *         FI OUTFILE PUNCH (RECFM FB LRECL 80 BLOCK 80         * */
+/* *         MOVEFILE                                             * */
+/* *         CL PUN                                               * */
+/* *         SP RDR CL K                                          * */
+/* *         READCARD * *                                         * */
+/* *         CBTTAPE 402 SETUP A 3390                             * */
+/* *                                                              * */
+/* *         NOTE: It is assumed that the CBT tape is mounted     * */
+/* *               on your 181                                    * */
+/* *               In the CBTTAPE command, the 402 is the CBT     * */
+/* *               version, SETUP tells it to load the            * */
+/* *               appropriate files from the CBT tape, assemble  * */
+/* *               them and generate load modules. In addition    * */
+/* *               SETUP will also create an index of the CBT     * */
+/* *               tape so that future retrievals will be easier. * */
+/* *                                                              * */
+/* *     On-going usage:                                          * */
+/* *            CBTTAPE 402 fileno target disktype                * */
+/* *         NOTE: It is assumed that the CBT tape is mounted     * */
+/* *               on your 181. The 402 is again the CBT version, * */
+/* *               fileno is the file number you want to load,    * */
+/* *               target is the filemode of the disk that will   * */
+/* *               receive the extracted modules, and disktype    * */
+/* *               is the device type to use for some t-disk      * */
+/* *               (sometimes we need a little work space)        * */
+/* *         Example:                                             * */
+/* *               CBTTAPE 402 122 R 3390                         * */
+/* *                    This will get, if we need it, 5 cylinders * */
+/* *                    of t-disk on a 3390, and load file 122    * */
+/* *                    from CBT version 402 to the R minidisk.   * */
+/* *                                                              * */
+/* *     Required files:                                          * */
+/* *         CBTTAPE EXEC        (This file)                      * */
+/* *         CBT973   ASSEMBLE  (From file 002 of the CBT tape)   * */
+/* *         IEBCOPY  ASSEMBLE  (From elsewhere in this file)     * */
+/* *         IEBCOPY  HELP        (From elsewhere in this file)   * */
+/* **************************************************************** */
+
+address command
+arg CbtVersion File_No Target_Disk DiskType
+
+/* *********************************** */
+/* * Set up some initial variables   * */
+/* *********************************** */
+
+If Target_Disk = '' Then Do
+    Target_Disk = 'A'
+    End
+
+If DiskType = '' Then Do
+    DiskType = '3390'
+    End
+
+Maxfiles = 500
+Spaces = '                    '                         /* 20 spaces */
+
+If CbtVersion = '' Then Do
+    Say 'CBT Version not entered'
+    Say 'Re-enter with correct version'
+    Exit 99
+    End   /*  If CbtVersion  */
+
+CBT = 'CBT' || CBTVersion
+CBTF1 = CBT || ' FILE001 *'
+CBTF3 = CBT || ' FILE003 *'
+
+'STATE ' CBT 'INDEX *'
+If RC <> 0 Then Do
+    Say 'Building ' CBT ' INDEX'
+    Call Obtain_Temp_Disk
+    Call Load_File_One
+    Call Condense_File_One
+    Call Load_File_Three
+    Call Process_File_Three
+    Call Release_Temp_Disk
+    Say 'Build of ' CBT ' INDEX is complete'
+    End   /* If RC   */
+
+'SET CMSTYPE HT'
+'STATE CBT973 MODULE *'
+'SET CMSTYPE RT'
+If RC <> 0 Then Do
+    Call Obtain_Temp_Disk
+    Call Load_File_Two
+    Call Generate_Cbt973
+    Call Release_Temp_Disk
+    End   /* If RC   */
+
+'SET CMSTYPE HT'
+'STATE IEBCOPY MODULE *'
+'SET CMSTYPE RT'
+If RC <> 0 Then do
+    CALL GENERATE_IEBCOPY
+    End   /*  If RC */
+
+'SET CMSTYPE HT'
+'STATE IEBUPDTE MODULE *'
+'SET CMSTYPE RT'
+If RC <> 0 Then do
+    CALL GENERATE_IEBUPDTE
+    End   /*  If RC */
+
+If File_No = 'SETUP' Then Do
+    Say 'Setup completed'
+    Exit 0
+    End   /*  If File_No  */
+Address CMS 'EXECIO * DISKR' CBT 'INDEX * (ZONE 1 3 FIND /' || File_No || '/ '
+Parse upper PULL junk
+Parse upper PULL Line
+Parse upper VAR Line 55 BKI 60 BKO 65 .
+Parse upper VAR Line 1 FileNo 4 Desc 24 Last_Upd 32 P1 40 P2 48 LR 51 fm 55 .
+
+If File_No <> FileNo Then Do
+    Say 'Requested file number (' File_No ') not found'
+    Exit 98
+    End                                           /* If File_No ... */
+
+Say 'File ' File_No ' is in ' P1 ' format'
+
+Call Position_File
+
+If P1 = 'IEBCOPY' Then Do     /* This is the COPY PROC simulation   */
+    'SET CMSTYPE HT'
+    'FILEDEF TAPE TAP1 SL VOLID' Cbt
+    'IEBCOPY LOAD FMODE ' Target_Disk
+    SaveRc = RC
+    'SET CMSTYPE RT'
+    End  /*  If P1 ...  */
+
+If P1 = 'CBT973' Then Do     /* This is the UPDATEO PROC simulation */
+    Call Obtain_Temp_Disk
+    'FILEDEF INMOVE TAP1 (RECFM VB BLOCK ' BKI
+    File_Num = 'FILE' || File_No
+    'FILEDEF OUTMOVE DISK' CBT File_Num Fm1 ' (RECFM VB BLOCK' BKI
+    'MOVEFILE'
+    SaveRc1 = RC
+    'FILEDEF INPUT DISK' CBT File_Num Fm1 ' (RECFM VB BLOCK' BKI
+    'FILEDEF OUTPUT DISK' CBT File_Num Target_Disk '(RECFM FB BLOCK 80'
+    'CBT973'
+    SaveRc = RC
+    If SaveRc1 ^= 0 Then Do
+        SaveRc = SaveRc1
+        End
+    'SET CMSTYPE RT'
+    End  /*  If P1 ...  */
+
+If P1 = 'IEBGENER' Then Do    /* This is the GENERO PROC simulation */
+    'FILEDEF INMOVE TAP1 (RECFM' LR 'BLOCK ' BKI 'RECFM' FM
+    File_Num = 'FILE' || File_No
+    'FILEDEF OUTMOVE DISK' CBT File_Num Target_Disk ' (RECFM FB BLOCK 80'
+    'MOVEFILE'
+    SaveRc = RC
+    End  /*  If P1 ...  */
+
+If SaveRc = 0 Then Do
+    Say 'File ' File_No ' has been successfully loaded to ' Target_Disk
+    Exit 0
+    End  /*  If SaveRc ...  */
+Say 'File ' File_No ' has not been loaded '
+Exit SaveRc
+
+Position_File:
+    Say 'Positioning to file ' FileNo
+    'SET CMSTYPE HT'
+    'TAPE REW'                  /*  Reset so we know where we are */
+    Skip_Files = FileNo - 1
+    If Skip_Files = 0
+        Then return
+    'TAPE FSF ' Skip_Files
+    'SET CMSTYPE RT'
+    Return
+
+Condense_File_One:
+    Address CMS 'EXECIO * DISKR' CBTF1 '(LO /'DO NOT REMOVE'/ FIFO'
+    Parse Upper Pull junk
+    Parse Upper Pull junk
+    Do Forever
+        Address CMS 'EXECIO 1 DISKR' CBTF1 '(VAR LINE'
+        Parse upper VAR Line 1 . 5 Desc 22 FileNo 25 . 46 Last_upd 54 .
+        FileNo = Strip(FileNo)
+        If FileNo = '' Then Return
+        File_Desc.FileNo  = Desc
+        File_FileNo.FileNo = FileNo
+        File_Last_Upd.FileNo = Last_Upd
+        End   /*  Do Forever    */
+    'ERASE' CBT 'FILE001' Fm1
+    Return
+
+Generate_Iebcopy:
+    'SET CMSTYPE HT'
+    'ASSEMBLE IEBCOPY'
+    'LOAD IEBCOPY'
+    'GENMOD IEBCOPY'
+    'COPY IEBCOPY MODULE' Fm1 ' = = 'Target_Disk
+    'SET CMSTYPE RT'
+    Return
+
+Generate_Iebupdte:
+    'SET CMSTYPE HT'
+    'ASSEMBLE IEBUPDTE'
+    'LOAD IEBUPDTE'
+    'GENMOD IEBUPDTE'
+    'COPY IEBUPDTE MODULE ' Fm1 ' = = 'Target_Disk
+    'SET CMSTYPE RT'
+    Return
+
+Generate_Cbt973:
+    'SET CMSTYPE HT'
+    'ASSEMBLE CBT973'
+    'LOAD CBT973'
+    'GENMOD CBT973'
+    'COPY CBT973 MODULE' Fm1 ' = =' Target_Disk
+    'SET CMSTYPE RT'
+    Return
+
+
+Obtain_Temp_Disk:
+    'SET CMSTYPE HT'
+    'GETFMADR'
+    Parse pull . Fm1 Vaddr1 .
+    ADDRESS CMS 'DEFINE T' || Disktype Vaddr1 '5'
+    queue 'yes'
+    queue 'TMP' || Right(Vaddr1,3,'0')
+    'FORMAT' Vaddr1 Fm1
+    'SET CMSTYPE RT'
+    Return
+
+Release_Temp_Disk:
+    'SET CMSTYPE HT'
+    'RELEASE' Fm1 '(det'
+    'SET CMSTYPE RT'
+    Return
+
+Load_File_One:
+    Say 'Positioning to first file'
+    'SET CMSTYPE HT'
+    'TAPE REW'
+    'FILEDEF INPUT TAP1 (LRECL 80 BLOCK 32720 RECFM FB'
+    'FILEDEF OUTPUT DISK' CBT 'FILE001' Fm1 '(LRECL 80 BLOCK 80 RECFM FB'
+    'MOVEFILE INPUT OUTPUT'
+    'SET CMSTYPE RT'
+    Return
+
+Load_File_Two:
+    Say 'Positioning to second file'
+    'SET CMSTYPE HT'
+    'TAPE REW'              /*  Reset so we know where we are   */
+    'TAPE FSF 1'            /*  skip first file                 */
+    'Filedef input tap1 (lrecl 80 block 32720 recfm fb'
+    'Filed output disk CBT973 ASSEMBLE' Fm1 '(lrecl 80 block 80 recfm fb'
+    'Movefile Input Output'
+    'SET CMSTYPE RT'
+    Return
+
+Load_File_Three:
+    Say 'Positioning to third file'
+    'SET CMSTYPE HT'
+    'TAPE REW'              /*  Reset so we know where we are   */
+    'TAPE FSF 2'            /*  skip first two files            */
+    'Filedef input tap1 (lrecl 80 block 32720 recfm fb'
+    'Filedef output disk' CBT 'FILE003' Fm1 '(lrecl 80 block 80 recfm fb'
+    'Movefile Input Output'
+    'SET CMSTYPE RT'
+    Return
+
+Process_File_Three:
+    i = 0
+    Detail.0 = 0
+    Scale1 = '0  0                   2       3       4       4  5   5    6    6'
+    'EXECIO 1 DISKW' CBT 'INDEX ' Target_Disk '( STR' Scale1
+    Scale2 = '1  4                   4       2       0       8  1   5    0    5'
+    'EXECIO 1 DISKW' CBT 'INDEX ' Target_Disk '( STR' Scale2
+    Do Forever
+        Address CMS 'EXECIO 1 DISKR' CBTF3 '(VAR LINE'
+        If Rc ^= 0 Then Do
+            Signal Process_File_Three_B
+            End
+        If substr(Line,3,7) = 'STEPLIB' Then Do
+            Iterate
+            End
+        If substr(Line,3,4) ^= 'STEP' Then Do
+            Iterate
+            End
+        i = i + 1
+        Detail.i = line
+        Detail.0 = Detail.0 + 1
+        End
+Process_File_Three_B:
+    Do j = 1 to Detail.0
+        Parse Upper VAR Detail.j junk 'EXEC' Proc_Name ',LAB=' Rest
+        FileNo = Left(Rest,3)
+        Proc_Name = Strip(Proc_Name)
+        Select;
+            When Proc_Name = 'COPY' Then Do
+                P1 = 'IEBCOPY'
+                P2 = ' '
+                BKO = 0
+                Call Save_Entry
+                Iterate
+                End    /* When Proc_Name = 'COPY'       */
+            When Proc_Name = 'GENER' Then Do
+                LR = 80
+                BKI = 32716
+                BKO = 0
+                FM = FB
+                P1 = 'IEBGENER'
+                P2 = P1
+                Call Process_Overrides
+                Call Save_Entry
+                Iterate
+                End    /* When Proc_Name = 'GENER'      */
+            When Proc_Name = 'GENERO' Then Do
+                LR = 80
+                BKI = 32720
+                BKO = 0
+                FM = FB
+                P1 = 'IEBGENER'
+                P2 = P1
+                Call Process_Overrides
+                Call Save_Entry
+                Iterate
+                End    /* When Proc_Name = 'GENERO'     */
+            When Proc_Name = 'UPDATEO' Then Do
+                LR = 80
+                BKI = 32720
+                BKO = 0
+                FM = FB
+                P1 = 'CBT973'
+                P2 = 'PDSLOAD'
+                Call Process_Overrides
+                Call Save_Entry
+                Iterate
+                End    /* When Proc_Name = 'UPDATEO'    */
+            Otherwise Do
+                Iterate
+                End    /* Otherwise Do                  */
+            Parse Pull junk
+        End            /* SELECT                        */
+    End                /* DO                            */
+    Return
+
+Process_Overrides:
+    Parse VALUE Rest WITH . 'FM=' RecFm ',' .
+    Parse VALUE Rest WITH . 'LR=' LrecL ',' .
+    Parse VALUE Rest WITH . 'BKI=' BlkSizeI ',' .
+    Parse VALUE Rest WITH . 'BKO=' BlkSizeO ' ' .
+    If LrecL <> '' Then LR = LrecL
+    If RecFm <> '' Then FM = RecFm
+    If BlkSizeI <> '' Then BKI = BlkSizeI
+    If BlkSizeO <> '' Then BKO = BlkSizeO
+    Return
+
+Save_Entry:
+    FileNo    = RIGHT(FileNo,3,'0')
+    Desc      = LEFT(File_Desc.FileNo,20)
+    Last_Upd  = LEFT(File_Last_Upd.FileNo,8)
+    P1        = LEFT(P1,8)
+    P2        = LEFT(P2,8)
+    LR        = RIGHT(LR,3,'0')
+    FM        = LEFT(FM,4)
+    BKI       = RIGHT(BKI,5,'0')
+    BKO       = RIGHT(BKO,5,'0')
+
+    Entry = FileNo || Desc || Last_Upd || P1 || P2 || LR || FM
+    Entry = Entry || BKI || BKO
+    Entry = LEFT(Entry,80)
+    'EXECIO 1 DISKW' CBT 'INDEX ' Target_Disk '( STR' Entry
+    Return
+:READ IEBCOPY ASSEMBLE
+IEBCOPY  TITLE 'I E B C O P Y  -  LOAD A PDS DUMPED USING IEBCOPY'      00000010
+* THIS UTILITY LOADS AND LISTS ANY MEMBER(S) OF DATA SET UNLOADED       00000020
+* USING THE IEBCOPY UTILITY. YOU CAN:                                   00000030
+* SELECT ANY MEMBER(S) TO BE LOADED                                     00000040
+* LIST THE DIRECTORY OF THE FILE, WITH THE EXTRA INFORMATION IN HEX     00000050
+         SPACE ,                                                        00000060
+* THE COMMAND IS IEBCOPY. THE FIRST OPTION MUST BE EITHER               00000070
+*        LIST            LIST THE DIRECTORY OF THIS DATA SET            00000080
+*        LOAD            LOAD THE FILE, EITHER USING THE SELECTED LIST  00000090
+*                        OF MEMBERS, OR THE ENTIRE DATA SET.            00000100
+         SPACE ,                                                        00000110
+* WITH EITHER OF THESE OPTIONS, THE FOLLOWING OPTIONS CAN ALSO BE       00000120
+* SPECIFIED:                                                            00000130
+*        FTYPE/FILETYPE  WHEN LOADING A FILE, THE FILE TYPE.            00000140
+*                        THE DEFAULT IS 'IEBCOPY'.                      00000150
+*        FMODE/FILEMODE  WHEN LOADING A FILE, THE FILE MODE.            00000160
+*                        THE DEFAULT IS 'A2'.                           00000170
+*        FROM            FROM WHAT MEMBER THE LOAD/LIST IS TO START     00000180
+*        TO/THRU/THROUGH TO WHAT MEMBER THE LOAD/LIST IS TO END         00000190
+*        MEMBER          WHICH MEMBER IS TO BE LOADED/LISTED            00000200
+         SPACE ,                                                        00000210
+* N.B.             (1)   BY DEFAULT, ALL MEMBERS ARE LOADED/LISTED.     00000220
+*                  (2)   EOF ON TAPE IS NEVER REACHED, THIS WILL ABEND  00000230
+*                        BECAUSE EODAD IS NOT CODED IN THE DCB.         00000240
+*                  (3)   NOTE LISTS ARE DISCARDED AND NO MESSAGES ARE   00000250
+*                        ISSUED. LOAD MODULES ARE RELOADED CORRECTLY;   00000260
+*                        ONLY THE DATA PORTION IS RELOADED.             00000270
+         SPACE ,                                                        00000280
+* SEE OS/VS UTILITIES LOGIC MANUAL FOR FURTHER INFORMATION:             00000290
+* SY35-0005                                                             00000300
+         TITLE 'LOCAL MACROS'                                           00000310
+         MACRO ,                                                        00000320
+&LABEL   OPT   &NAME,&ADDR                                              00000330
+&LABEL   DC    CL8'&NAME',A(&ADDR)                                      00000340
+         MEND  ,                                                        00000350
+         TITLE 'DSECTS AND EQUATES'                                     00000360
+* THE UNLOADED FILE IS IN VB FORMAT, REGARDLESS OF THE INDICATORS       00000370
+* ON THE TAPE. USE VB/32756/32760 TO OPEN THE TAPE.                     00000380
+* THE USER MUST SUPPLY THE CONTROL STATEMENTS.                          00000390
+         SPACE 3                                                        00000400
+COPYR1   DSECT ,             RECORD 1 LAYOUT                            00000410
+R1LEN    DS    H             LENGTH                                     00000420
+         DS    H             RESERVED                                   00000430
+R1INDC   DS    X             INDICATOR, X'00'=OK, X'80'=ERROR           00000440
+R1ID     DS    XL3           IEBCOPY IDENTIFIER = X'CA6D0F'             00000450
+R1DSORG  DS    XL2           DSORG                                      00000460
+R1BLKSI  DS    XL2           BLKSIZE                                    00000470
+R1LRECL  DS    XL2           LRECL                                      00000480
+R1RECFM  DS    X             RECFM                                      00000490
+R1KEYLEN DS    X             KEYLEN                                     00000500
+R1OPTCD  DS    X             OPTCD                                      00000510
+         DS    X             *** RESERVED ***                           00000520
+R1TBLKSI DS    XL2           BLKSIZE OF TAPE FILE                       00000530
+R1DEVTYP DS    XL20          DEVICE TYPE INFORMATION                    00000540
+R1TRKCYL EQU   R1DEVTYP+10,2,C'H'                                       00000550
+LCOPYR1  EQU   *-COPYR1      LENGTH OF RECORD                           00000560
+         SPACE ,                                                        00000570
+R1IDEQ   EQU   X'CA6D0F'     IDENTIFIES IEBCOPY UNLOADED FILE           00000580
+         SPACE 3                                                        00000590
+COPYR2   DSECT ,             RECORD 2 LAYOUT                            00000600
+R2LEN    DS    H             LENGTH OF RECORD                           00000610
+         DS    H             *** RESERVED ***                           00000620
+R2DEB    DS    XL16          LAST 16 BYTES OF BASIC DEB                 00000630
+R2DEBX   DS    16XL16        DASD DEB EXTENSION                         00000640
+         DS    XL4           *** RESERVED ***                           00000650
+LCOPYR2  EQU   *-COPYR2      LENGTH OF RECORD                           00000660
+         SPACE 3                                                        00000670
+COPYR3   DSECT ,             RECORD 3-N LAYOUT                          00000680
+R3F      DS    X             RECORD TYPE INDICATOR                      00000690
+R3FSTD   EQU   B'00000000'             NORMAL RECORD                    00000700
+R3FNOTE  EQU   B'11100000'             NOTE RECORD, JUST BEFORE MEMBER  00000710
+R3M      DS    X             EXTENT                                     00000720
+R3BB     DS    XL2           BIN                                        00000730
+R3CC     DS    XL2           CYLINDER                                   00000740
+R3HH     DS    XL2           TRACK                                      00000750
+R3R      DS    X             RECORD                                     00000760
+R3K      DS    X             KEY LENGTH                                 00000770
+R3DL     DS    XL2           DATA LENGTH                                00000780
+LCOPYR3  EQU   *-COPYR3                                                 00000790
+         SPACE ,                                                        00000800
+DEBXTENT DSECT ,             FORMAT OF DEB EXTENT                       00000810
+DEBDVMOD DS    X             FILE MASK                                  00000820
+DEBUCBA  DS    AL3           UCB ADDRESS                                00000830
+DEBINUM  DS    H             BIN NUMBER                                 00000840
+DEBSTRCC DS    H             CYLINDER ADDRESS FOR START OF EXTENT       00000850
+DEBSTRHH DS    H             TRACK ADDRESS FOR START OF EXTENT          00000860
+DEBENDCC DS    H             CYLINDER ADDRESS FOR END OF EXTENT         00000870
+DEBENDHH DS    H             TRACK ADDRESS FOR END OF EXTENT            00000880
+DEBNMTRK DS    H             NO. OF TRACKS ALLOCATED TO THIS EXTENT     00000890
+LDEBXNT  EQU   *-DEBXTENT                                               00000900
+         SPACE ,                                                        00000910
+PDSREC   DSECT ,             FORMAT OF ENTRY IN DIRECTORY               00000920
+PDSNAME  DS    CL8           MEMBER NAME                                00000930
+PDSADDR  DS    XL3           TTR OF MEMBER                              00000940
+PDSFLAGS DS    X             SPECIAL INDICATORS                         00000950
+PDSALIAS EQU   X'80'         INDICATES AN ALIAS                         00000960
+PDSNOTE  EQU   B'01100000'   NUMBER OF NOTE LISTS                       00000970
+PDSUSER  EQU   B'00011111'   NUMBER OF USER HALFWORDS IN ENTRY          00000980
+LPDSREC  EQU   *-PDSREC                                                 00000990
+         EJECT ,                                                        00001000
+         DCBD  DEVD=DA,DSORG=PS                                         00001010
+         TITLE 'MAIN PROGRAM'                                           00001020
+IEBCOPY  START ,                                                        00001030
+         SPACE ,                                                        00001040
+         PRINT NOGEN                                                    00001050
+         SPACE ,                                                        00001060
+R0       EQU   0             REGISTER EQUATES                           00001070
+R1       EQU   1                                                        00001080
+R2       EQU   2                                                        00001090
+R3       EQU   3                                                        00001100
+R4       EQU   4                                                        00001110
+R5       EQU   5                                                        00001120
+R6       EQU   6                                                        00001130
+R7       EQU   7                                                        00001140
+R8       EQU   8                                                        00001150
+R9       EQU   9                                                        00001160
+R10      EQU   10                                                       00001170
+R11      EQU   11                                                       00001180
+R12      EQU   12                                                       00001190
+R13      EQU   13                                                       00001200
+R14      EQU   14                                                       00001210
+R15      EQU   15                                                       00001220
+         SPACE ,                                                        00001230
+         SAVE  (14,12),T,*   STOW REGS                                  00001240
+         LR    R12,R15       ESTABLISH ADDRESABILITY                    00001250
+         LA    R11,2048(,R12)                                           00001260
+         LA    R11,2048(,R11)                                           00001270
+         USING IEBCOPY,R12,R11                                          00001280
+         SPACE ,                                                        00001290
+         LA    R15,SAVEAREA                                             00001300
+         ST    R15,8(,R13)                                              00001310
+         ST    R13,4(,R15)                                              00001320
+         LR    R13,R15                                                  00001330
+         SPACE ,                                                        00001340
+         XC    TOZERO,TOZERO MAKE SERIALLY REUSABLE                     00001350
+         MVC   TO,GATE                                                  00001360
+         MVC   FILETYPE(10),=CL10'IEBCOPY A2'                           00001370
+         SPACE ,                                                        00001380
+         LA    R2,8(,R1)     VALIDATE OPTION(S)                         00001390
+         CLC   =CL8'LOAD',0(R2)                                         00001400
+         BE    SETLOAD                                                  00001410
+         CLC   =CL8'LIST',0(R2)                                         00001420
+         BE    SETLIST                                                  00001430
+         WRTERM 'INVALID OR MISSING FUNCTION, NOT ''LIST'' OR ''LOAD''' 00001440
+         MVC   RETCODE,=F'8'                                            00001450
+         B     ENDFILE                                                  00001460
+         SPACE ,                                                        00001470
+SETLOAD  MVI   FLAG,LOAD                                                00001480
+         B     CHECKOPT                                                 00001490
+SETLIST  MVI   FLAG,LIST                                                00001500
+         B     CHECKOPT                                                 00001510
+         SPACE ,                                                        00001520
+CHECKOPT LA    R2,8(,R2)           SCAN NEXT OPTIONS                    00001530
+         CLI   0(R2),X'FF'         END OF PARAMETERS ?                  00001540
+         BE    EXECUTE             YES, FINIS                           00001550
+         LM    R3,R4,=A(OPTIONS,NOPTIONS)                               00001560
+TESTOPT  CLC   0(8,R3),0(R2)       SEE IF WE CAN FIND THE OPTION        00001570
+         BE    EXECOPT                                                  00001580
+         LA    R3,12(,R3)          PUSH TO NEXT OPTION                  00001590
+         BCT   R4,TESTOPT          LOOP UNTIL DONE                      00001600
+         SPACE ,                                                        00001610
+         LINEDIT TEXT='INVALID OPTION - ........',SUB=(CHARA,(R2))      00001620
+         MVC   RETCODE,=F'8'                                            00001630
+         B     ENDFILE                                                  00001640
+         SPACE ,                                                        00001650
+BADPARM  WRTERM 'MISSING PARAMETER FOR LAST OPTION'                     00001660
+         MVC   RETCODE,=F'8'                                            00001670
+         B     ENDFILE                                                  00001680
+         SPACE ,                                                        00001690
+EXECOPT  L     R3,8(,R3)           POINT TO OPTION ROUTINE              00001700
+         LA    R2,8(,R2)           PUSH TO PARAMETER                    00001710
+         CLI   0(R2),X'FF'         MAKE SURE THERE IS ONE               00001720
+         BE    BADPARM             IF NOT, ERROR                        00001730
+         EX    0,0(,R3)            PERFORM THE ROUTINE                  00001740
+         B     CHECKOPT            CHECK THE NEXT OPTION                00001750
+         TITLE 'SCAN DIRECTORY, RETRIEVE REQUIRED INFORMATION'          00001760
+EXECUTE  DS    0H                  ACTUALLY PERFORM THE FUNCTION        00001770
+*                                                                       00001780
+* PHASE 1  -  OPEN THE UNLOADED DATA SET                                00001790
+*                                                                       00001800
+         OPEN  (TAPE,INPUT)        OPEN THE INPUT FILE                  00001810
+         TM    TAPE+DCBOFLGS-IHADCB,X'10'                               00001820
+         BZ    NOTOPEN             MUST OPEN INPUT DATA SET             00001830
+         OI    FLAGS,OPENTAPE      SIGNAL TAPE DATA SET OPENED          00001840
+         SPACE ,                                                        00001850
+*                                                                       00001860
+* PHASE 2  -  VERIFY RECORD 1                                           00001870
+*                                                                       00001880
+         GET   TAPE                GET THE 1ST RECORD                   00001890
+         USING COPYR1,R1           ADDRESS THE 1ST RECORD               00001900
+         CLC   R1LEN,=Y(LCOPYR1)   VERIFY LENGTH                        00001910
+         BL    BADTAPE             EVERYTHING MUST FIT                  00001920
+         CLC   R1ID,=AL3(R1IDEQ)                                        00001930
+         BNE   BADTAPE             OK . . . .                           00001940
+         SPACE ,                                                        00001950
+         LH    R0,R1TRKCYL                                              00001960
+         ST    R0,TRKCYL                                                00001970
+         LA    R2,DISK                                                  00001980
+         USING IHADCB,R2           COPY THE REQUIRED FIELDS             00001990
+         MVC   DCBLRECL,R1LRECL                                         00002000
+         MVC   BLKSIZE,R1BLKSI                                          00002010
+         MVC   DCBOPTCD,R1OPTCD                                         00002020
+         MVC   DCBRECFM,R1RECFM                                         00002030
+         CLI   R1KEYLEN,0                                               00002040
+         BE    OKEY                                                     00002050
+         WRTERM 'WARNING: DATA SET KEY LENGTH NOT ZERO, KEY IGNORED'    00002060
+OKEY     DS    0H                                                       00002070
+         DROP  R2,R1                                                    00002080
+         SPACE ,                                                        00002090
+*                                                                       00002100
+* PHASE 3  -  VERIFY RECORD 2                                           00002110
+*                                                                       00002120
+         SPACE ,                                                        00002130
+         GET   TAPE                                                     00002140
+         USING COPYR2,R1           ADDRESS RECORD 2                     00002150
+         CLC   =Y(LCOPYR2),R2LEN                                        00002160
+         BNE   BADTAPE             MAKE SURE WE HAVE ALL WE NEED        00002170
+         MVC   DEB(16),R2DEB       AND COPY DEB BASIC SECTION           00002180
+         MVC   EXTENTS(16*16),R2DEBX   AND EXTENTS                      00002190
+         DROP  R1                                                       00002200
+         SPACE ,                                                        00002210
+*                                                                       00002220
+* PHASE 4  -  PREAMBLE TO DIRECTORY SCAN                                00002230
+*                                                                       00002240
+         SPACE ,                                                        00002250
+         GETMAIN VU,LA=AREALEN,A=AREA   GET THE BUFFER                  00002260
+         LM    R1,R2,AREA          GET ADDRESS AND LENGTH               00002270
+         AR    R2,R1               POINT TO END OF GETMAINED AREA       00002280
+         STM   R1,R2,POINTER       UPDATE POINTER/END                   00002290
+         LA    R9,SHOWLIST         POINT TO DEFAULT ROUTINE             00002300
+         TM    FLAG,LOAD                                                00002310
+         BNO   NOTLOAD1                                                 00002320
+         LA    R9,SHOWLOAD                                              00002330
+NOTLOAD1 DS    0H                                                       00002340
+         SPACE ,                                                        00002350
+*                                                                       00002360
+* PHASE 5  -  SCAN DIRECTORY                                            00002370
+*                                                                       00002380
+         SPACE ,                                                        00002390
+NEXTPDS  BAL   R10,GETREC          GET A DIRECTORY BLOCK                00002400
+         LR    R2,R1                                                    00002410
+         USING COPYR3,R2                                                00002420
+         CLI   R3F,R3FSTD          MAKE SURE RECORD IS VALID            00002430
+         BNE   BADTAPE                                                  00002440
+         CLC   R3K(3),=AL1(8,1,0)  VERIFY KDD                           00002450
+         BNE   BADTAPE                                                  00002460
+         DROP  R2                                                       00002470
+         LA    R3,LCOPYR3(,R2)     POINT PAST RECORD PREFIX             00002480
+         LA    R2,10(,R3)          POINT PAST KEY + LENGTH INDICATOR    00002490
+         USING PDSREC,R2           ADDRESS THE RECORD                   00002500
+SHOWNAME CLC   PDSNAME,=8X'FF'     LAST POSSIBLE ENTRY ?                00002510
+         BE    WHATNOW             YES, FINISHED SCANNING DIRECTORY     00002520
+         CLC   PDSNAME,FROM                                             00002530
+         BL    NEXTNAME                                                 00002540
+         CLC   PDSNAME,TO                                               00002550
+         BH    NEXTNAME                                                 00002560
+         BALR  R10,R9              PERFORM THE ROUTINE                  00002570
+         SPACE ,                                                        00002580
+NEXTNAME DS    0H                                                       00002590
+         CLC   PDSNAME,0(R3)       IS THIS THE LAST NAME ?              00002600
+         BE    NEXTPDS             YES, READ THE NEXT RECORD            00002610
+         IC    R1,PDSFLAGS                                              00002620
+         N     R1,=A(PDSUSER)      NUMBER OF USER HALFWORDS             00002630
+         AR    R1,R1               NUMBER OF BYTES                      00002640
+         LA    R2,LPDSREC(R2,R1)   POINT TO NEXT ELEMENT                00002650
+         B     SHOWNAME            AND DISPLAY IT                       00002660
+         SPACE ,                                                        00002670
+         DROP  R2                                                       00002680
+         EJECT ,                                                        00002690
+*                                                                       00002700
+* PHASE 6  -  FREE UNUSED AREA OBTAINED USING GETMAIN                   00002710
+*                                                                       00002720
+         SPACE ,                                                        00002730
+WHATNOW  DS    0H                                                       00002740
+         LM    R1,R2,POINTER       FREE END OF GETMAINED AREA           00002750
+         SR    R2,R1               DETERMINE LENGTH                     00002760
+         LR    R0,R2               PREPARE FOR FREEMAIN                 00002770
+         FREEMAIN R,A=(1),LV=(0)   FREE UNUSED AREA                     00002780
+         SPACE ,                                                        00002790
+*                                                                       00002800
+* PHASE 7  -  TERMINATE IF LIST FUNCTION                                00002810
+*                                                                       00002820
+         SPACE ,                                                        00002830
+         TM    FLAG,LIST                                                00002840
+         BO    ENDFILE             IF LIST FUNCTION, WE HAVE FINISHED   00002850
+         SPACE ,                                                        00002860
+*                                                                       00002870
+* PHASE 8  -  GO TO THE END OF THE DIRECTORY                            00002880
+*                                                                       00002890
+         SPACE ,                                                        00002900
+NEXTREC2 BAL   R10,GETREC          GET THE NEXT RECORD                  00002910
+         USING COPYR3,R1           ADDRESS THE RECORD                   00002920
+         CLI   R3F,R3FSTD                                               00002930
+         BNE   BADTAPE                                                  00002940
+         CLC   R3DL,=AL2(0)                                             00002950
+         BNE   NEXTREC2            UNTIL END OF DIRECTORY               00002960
+         SPACE ,                                                        00002970
+*                                                                       00002980
+* PHASE 9  -  SORT THE DIRECTORY BY ADDRESS                             00002990
+*                                                                       00003000
+         SPACE ,                                                        00003010
+         L     R2,POINTER          GET END OF TABLE                     00003020
+         S     R2,AREA                 LENGTH                           00003030
+         SRL   R2,4                GET NUMBER OF ENTRIES                00003040
+         LR    R4,R2               REMEMBER FOR LATER USE               00003050
+         C     R2,=F'1'            HOW MANY                             00003060
+         BL    NOMEMBER            NONE, FINISHED !                     00003070
+         BE    NOSORT              1, ALREADY SORTED                    00003080
+         SPACE ,                                                        00003090
+SORT     BCTR  R2,0                DECREMENT, ONLY NEED N-1 COMPARES    00003100
+         OI    FLAG,SORTED         SIGNAL FILE IS SORTED                00003110
+         L     R3,AREA             POINT TO START OF AREA               00003120
+COMPARE  CLC   0(8,R3),16(R3)      IS THIS IN ORDER ?                   00003130
+         BNH   NOSWITCH            NO, FLIP                             00003140
+         NI    FLAG,255-SORTED     NO LONGER SORTED                     00003150
+         XC    0(16,R3),16(R3)     SWAP ELEMENTS                        00003160
+         XC    16(16,R3),0(R3)                                          00003170
+         XC    0(16,R3),16(R3)                                          00003180
+NOSWITCH LA    R3,16(,R3)          POINT TO NEXT ELEMENT                00003190
+         BCT   R2,COMPARE          LOOP UNTIL DONE                      00003200
+         TM    FLAG,SORTED         SEE IF SORTED                        00003210
+         BO    NOSORT              YES, OK                              00003220
+         LR    R2,R4               COPY NUMBER OF ELEMENTS              00003230
+         B     SORT                AND DO IT AGAIN                      00003240
+         SPACE ,                                                        00003250
+NOSORT   DS    0H                  SORT FINISHED                        00003260
+         SPACE ,                                                        00003270
+*                                                                       00003280
+* PHASE 10  -  SCAN THROUGH TAPE, PICK OFF AND LOAD REQUIRED FILES      00003290
+*                                                                       00003300
+         SPACE ,                                                        00003310
+         L     R3,AREA             POINT TO START OF LIST               00003320
+PHASE10A BAL   R10,GETREC          GET A RECORD                         00003330
+         USING COPYR3,R1           ADDRESS THE RECORD                   00003340
+         CLI   R3F,R3FSTD          NOTE ENTRY?                          00003350
+         BNE   PHASE10A                YES, IGNORE RECORD               00003360
+         CLC   0(8,R3),R3M         IS THIS THE RIGHT ADDRESS ?          00003370
+         BE    LOADFILE            YES, LOAD THE FILE                   00003380
+         BH    PHASE10A            LOW, OK                              00003390
+         WRTERM 'ERROR: MISSING RECORD FROM TAPE FILE'                  00003400
+         MVC   RETCODE,=F'16'                                           00003410
+         B     ENDFILE                                                  00003420
+         DROP  R1                                                       00003430
+         SPACE ,                                                        00003440
+LOADFILE LR    R2,R1               COPY THE ADDRESS OF THE RECORD       00003450
+         MVC   FILENAME,8(R3)      SET FILE NAME                        00003460
+         TR    FILENAME(18),BADCHARS                                    00003470
+         LA    R1,FILEDEF                                               00003480
+         SVC   202                 ISSUE FILEDEF COMMAND                00003490
+         DC    AL4(BADDISK)                                             00003500
+         MVC   DISK+DCBBLKSI-IHADCB(2),BLKSIZE                          00003510
+         OPEN  (DISK,OUTPUT)       OPEN THE FILE                        00003520
+         OI    FLAGS,OPENDISK      SIGNAL THAT DISK WAS OPENED          00003530
+         SPACE ,                                                        00003540
+         USING COPYR3,R2           ADDRESS RECORD                       00003550
+PUT      CLC   =H'0',R3DL          IS THE DATA LENGTH = 0               00003560
+         BE    NEXTFILE            YES, END OF FILE                     00003570
+         SR    R15,R15                                                  00003580
+         IC    R15,R3K             GET THE KEY LENGTH                   00003590
+         LA    R6,LCOPYR3(R2,R15)  POINT TO DATA AREA                   00003600
+         SR    R5,R5                                                    00003610
+         ICM   R5,3,R3DL           GET THE LENGTH                       00003620
+         MVC   DISK+DCBBLKSI-IHADCB(2),R3DL                             00003630
+         WRITE DECB,SF,DISK,(R6),(R5)  WRITE THE RECORD                 00003640
+         CHECK DECB                MAKE SURE IT COMPLETED CORRECTLY     00003650
+SKIPREC  BAL   R10,GETREC          GET THE NEXT RECORD                  00003660
+         LR    R2,R1               COPY THE ADDRESS                     00003670
+         CLI   R3F,R3FSTD          SKIP IF NOTE INFORMATION             00003680
+         BNE   SKIPREC                                                  00003690
+         B     PUT                 AND WRITE IT OUT                     00003700
+         DROP  R2                                                       00003710
+         SPACE ,                                                        00003720
+NEXTFILE CLOSE (DISK,)             FINISHED WITH DISK FILE              00003730
+         LINEDIT TEXT='........ LOADED',SUB=(CHARA,8(R3)),             X00003740
+               DOT=NO,COMP=NO                                           00003750
+SAMEADDR LR    R1,R3               COPY ADDRESS OF THIS ELEMENT         00003760
+         LA    R3,16(,R3)          POINT TO NEXT ELEMENT                00003770
+         BCT   R4,SHOWSAME                                              00003780
+         B     ENDFILE                                                  00003790
+SHOWSAME CLC   0(8,R3),0(R1)       SAME ADDRESS ?                       00003800
+         BNE   PHASE10A            NO, FINISH GOING THROUGH FILE        00003810
+         LINEDIT TEXT='ALSO KNOWN AS ........',SUB=(CHARA,8(R3)),DOT=NO 00003820
+         B     SAMEADDR                                                 00003830
+         EJECT ,                                                        00003840
+ENDFILE  CLOSE (TAPE,,DISK,) CLOSE THE FILES                            00003850
+         SPACE ,                                                        00003860
+         TM    FLAGS,OPENDISK          ONLY FREEPOOL IF DISK OPENED     00003870
+         BZ    NOFREEDS                                                 00003880
+         NI    FLAGS,255-OPENDISK                                       00003890
+         FREEPOOL DISK                                                  00003900
+NOFREEDS DS    0H                                                       00003910
+         SPACE ,                                                        00003920
+         TM    FLAGS,OPENTAPE                                           00003930
+         BZ    NOFREETP                                                 00003940
+         NI    FLAGS,255-OPENTAPE                                       00003950
+         FREEPOOL TAPE                                                  00003960
+NOFREETP DS    0H                                                       00003970
+         SPACE ,                                                        00003980
+         L     R1,AREA                                                  00003990
+         L     R0,POINTER                                               00004000
+         SR    R0,R1                                                    00004010
+         BZ    NOFREE                                                   00004020
+         FREEMAIN R,A=(1),LV=(0)                                        00004030
+NOFREE   DS    0H                                                       00004040
+         SPACE ,                                                        00004050
+         L     R13,4(,R13)   POP SAVE AREA CHAIN                        00004060
+         L     R15,RETCODE   LOAD RETURN CODE                           00004070
+         RETURN (14,12),T,RC=(15)   RETURN TO CALLER                    00004080
+         SPACE ,                                                        00004090
+NOMEMBER WRTERM 'WARNING: NO MEMBERS SELECTED TO BE LOADED'             00004100
+         MVC   RETCODE,=F'4'                                            00004110
+         B     ENDFILE                                                  00004120
+         SPACE ,                                                        00004130
+BADDISK  WRTERM 'ERROR: PROBLEM WITH DISK FILE'                         00004140
+         MVC   RETCODE,=F'16'                                           00004150
+         B     ENDFILE                                                  00004160
+         SPACE ,                                                        00004170
+NOTOPEN  WRTERM 'I/O FILE DID NOT OPEN'                                 00004180
+         MVC   RETCODE,=F'12'                                           00004190
+         B     ENDFILE                                                  00004200
+         SPACE ,                                                        00004210
+BADTAPE  WRTERM 'SOURCE FILE DOES NOT MATCH IEBCOPY FORMAT'             00004220
+         MVC   RETCODE,=F'12'                                           00004230
+         B     ENDFILE                                                  00004240
+         TITLE 'LOCAL SUBROUTINES'                                      00004250
+GETREC   DS    0H            OBTAIN NEXT RECORD FROM TAPE FILE          00004260
+*                            RETURN ADDRESS IS IN R10                   00004270
+*                            ADDRESS OF RECORD RETURNED IN R1           00004280
+         SPACE ,                                                        00004290
+         USING COPYR3,R1     ADDRESS THE RECORD                         00004300
+         CLC   =A(0),RECLEN  IS THERE ANYTHING IN THE BUFFER ?          00004310
+         BNE   GETREC10      YES, THEN GIVE IT TO THE USER              00004320
+         GET   TAPE          NO, OBTAIN THE NEXT RECORD                 00004330
+         LH    R15,0(,R1)    GET THE LENGTH OF THE RECORD               00004340
+         SH    R15,=H'4'     SUBTRACT THE LENGTH OF THE HEADER          00004350
+         LA    R1,4(,R1)     POINT PAST THE HEADER                      00004360
+         ST    R15,RECLEN    SET THE LENGTH OF THE RECORD LEFT          00004370
+         ST    R1,RECADDR    SET THE ADDRESS OF THE NEXT ELEMENT        00004380
+         SPACE ,                                                        00004390
+GETREC10 DS    0H            RETURN ADDRESS OF BUFFER IN R1             00004400
+         L     R1,RECADDR    GET THE ADDRESS OF THE ELEMENT             00004410
+         USING COPYR3,R1     ADDRESS THE ELEMENT                        00004420
+         SR    R15,R15       CALCULATE THE LENGTH                       00004430
+         SR    R0,R0                                                    00004440
+         IC    R15,R3K       GET THE KEY LENGTH                         00004450
+         ICM   R0,3,R3DL     GET THE DATA LENGTH                        00004460
+         AR    R15,R0        CALCULATE LENGTH OF THE KEY + DATA AREA    00004470
+         LA    R15,LCOPYR3(,R15)   TOTAL LENGTH OF AREA                 00004480
+         L     R0,RECLEN     GET THE LENGTH                             00004490
+         SR    R0,R15        CALCULATE THE LENGTH LEFT                  00004500
+         BM    BADTAPE       SHOULD NEVER GO < 0                        00004510
+         ST    R0,RECLEN     UPDATE LENGTH                              00004520
+         LA    R15,0(R1,R15) POINT TO NEXT ELEMENT                      00004530
+         ST    R15,RECADDR                                              00004540
+         BR    R10           RETURN TO CALLER                           00004550
+         SPACE ,                                                        00004560
+         DROP  R1                                                       00004570
+         EJECT ,                                                        00004580
+         USING PDSREC,R2     DISPLAY THE INFORMATION                    00004590
+SHOWLIST DS    0H            DISPLAY THE INFO. ABOUT A MEMBER           00004600
+         IC    R4,PDSFLAGS                                              00004610
+         N     R4,=A(PDSUSER)                                           00004620
+         AR    R4,R4                                                    00004630
+         LA    R4,L'PDSADDR+L'PDSFLAGS(,R4)                             00004640
+         LINEDIT TEXT='MEMBER ........ ................................X00004650
+               .......................................',               X00004660
+               DOT=NO,RENT=NO,COMP=NO,                                 X00004670
+               SUB=(CHARA,PDSNAME,HEX4A,(PDSADDR,(R4)))                 00004680
+         BR    R10                                                      00004690
+         SPACE ,                                                        00004700
+         DROP  R2                                                       00004710
+         EJECT ,                                                        00004720
+         USING PDSREC,R2                                                00004730
+SHOWLOAD DS    0H            ENTER LINE INTO INCORE LIST                00004740
+         LM    R4,R5,POINTER POINT TO LAST ELEMENT USED                 00004750
+         LA    R6,16(,R4)    POINT TO NEW LAST ELEMENT                  00004760
+         CR    R6,R5         PAST THE END ?                             00004770
+         BH    TOOMANY       YES, CAN'T DO THIS                         00004780
+         ST    R6,POINTER    UPDATE POINTER                             00004790
+         SPACE ,                                                        00004800
+         MVC   8(8,R4),PDSNAME     COPY THE MEMBER NAME                 00004810
+         MVC   7(1,R4),PDSADDR+2   COPY THE R FROM TTR                  00004820
+         SR    R5,R5         CALCULATE MBBCCHHR                         00004830
+         IC    R5,DEBNMEXT   GET THE NUMBER OF EXTENTS                  00004840
+         LA    R6,EXTENTS    POINT TO DEB EXTENTS                       00004850
+         USING DEBXTENT,R6                                              00004860
+         SR    R7,R7         GET THE TT OF THE TTR                      00004870
+         ICM   R7,3,PDSADDR                                             00004880
+         SPACE ,                                                        00004890
+NEXTENT  CH    R7,DEBNMTRK      Number of Tracks in Extent
+        # wenn kleiner
+         BL    HAVEXNT       TT < NO. TT IN EXTENT                      00004910
+         SH    R7,DEBNMTRK   RELOCATE TT                                00004920
+         LA    R6,LDEBXNT(,R6)                                          00004930
+         BCT   R5,NEXTENT                                               00004940
+         B     BADTAPE                                                  00004950
+         SPACE ,                                                        00004960
+HAVEXNT  MVC   1(2,R4),DEBINUM     BB                                   00004970
+         AH    R7,DEBSTRHH                                              00004980
+         CLC   DEBSTRCC,DEBENDCC   CROSS CYLINDER BOUNDARIES ?          00004990
+         BE    HAVECCHH                                                 00005000
+         SPACE ,                                                        00005010
+         LR    R1,R7                                                    00005020
+         SR    R0,R0                                                    00005030
+         D     R0,TRKCYL                                                00005040
+         STCM  R0,3,5(R4)          HH                                   00005050
+         AH    R1,DEBSTRCC         CC                                   00005060
+         STCM  R1,3,3(R4)                                               00005070
+         B     DOEXTENT                                                 00005080
+         SPACE ,                                                        00005090
+HAVECCHH MVC   3(2,R4),DEBSTRCC    CC                                   00005100
+         STCM  R7,3,5(R4)          HH                                   00005110
+         SPACE ,                                                        00005120
+         DROP  R6,R2                                                    00005130
+DOEXTENT S     R6,=A(EXTENTS)                                           00005140
+         SRL   R6,4                                                     00005150
+         STC   R6,0(,R4)           M                                    00005160
+         BR    R10                                                      00005170
+         SPACE ,                                                        00005180
+TOOMANY  WRTERM 'TOO MANY MEMBERS TO BE LOADED'                         00005190
+         MVC   RETCODE,=F'8'                                            00005200
+         B     ENDFILE                                                  00005210
+         TITLE 'PARAMETER PROCESSING ROUTINE(S)'                        00005220
+OPTIONS  DS    0D                                                       00005230
+         OPT   MEMBER,SMEMBER                                           00005240
+         OPT   FROM,SFROM                                               00005250
+         OPT   TO,STO                                                   00005260
+         OPT   THRU,STO                                                 00005270
+         OPT   THROUGH,STO                                              00005280
+         OPT   FILETYPE,STYPE                                           00005290
+         OPT   FTYPE,STYPE                                              00005300
+         OPT   FILEMODE,SMODE                                           00005310
+         OPT   FMODE,SMODE                                              00005320
+NOPTIONS EQU   (*-OPTIONS)/12                                           00005330
+         SPACE ,                                                        00005340
+SMEMBER  BAL   R1,*+4                                                   00005350
+         MVC   FROM,0(R2)                                               00005360
+         MVC   TO,0(R2)                                                 00005370
+         BR    R1                                                       00005380
+         SPACE ,                                                        00005390
+SFROM    BAL   R1,*+4                                                   00005400
+         MVC   FROM,0(R2)                                               00005410
+         LA    R14,FROM+7                                               00005420
+         LA    R15,L'FROM                                               00005430
+TONULL   CLI   0(R14),C' '                                              00005440
+         BNER  R1                                                       00005450
+         MVI   0(R14),0                                                 00005460
+         BCTR  R14,0                                                    00005470
+         BCT   R15,TONULL                                               00005480
+         BR    R1                                                       00005490
+         SPACE ,                                                        00005500
+STO      BAL   R1,*+4                                                   00005510
+         MVC   TO,0(R2)                                                 00005520
+         LA    R14,TO+7                                                 00005530
+         LA    R15,L'TO                                                 00005540
+TOFF     CLI   0(R14),C' '                                              00005550
+         BNER  R1                                                       00005560
+         MVI   0(R14),X'FF'                                             00005570
+         BCTR  R14,0                                                    00005580
+         BCT   R15,TOFF                                                 00005590
+         BR    R1                                                       00005600
+         SPACE ,                                                        00005610
+STYPE    MVC   FILETYPE,0(R2)                                           00005620
+SMODE    MVC   FILEMODE,0(R2)                                           00005630
+         TITLE 'WORK AREA(S), CONSTANTS AND DCBS'                       00005640
+DISK     DCB   DDNAME=DISK,MACRF=W,DEVD=DA,DSORG=PS,EXLST=EXLST,BUFNO=1 00005650
+TAPE     DCB   DDNAME=TAPE,MACRF=GL,LRECL=32756,BLKSIZE=32760,         X00005660
+               RECFM=VB,DSORG=PS,BUFNO=1                                00005670
+EXLST    DC    X'87',AL3(JFCB)                                          00005680
+JFCB     DS    22D                     JFCB FOR DISK FILES              00005690
+         SPACE ,                                                        00005700
+FLAGS    DC    X'00'                   INTERNAL FLAGS                   00005710
+OPENDISK EQU   X'80'                       SIGNALS DISK FILE WAS OPENED 00005720
+OPENTAPE EQU   X'40'                       SIGNALS TAPE FILE WAS OPENED 00005730
+         SPACE ,                                                        00005740
+AREALEN  DC    A(1024,1000*1024)       MIN/MAX LENGTH REQUESTED         00005750
+AREA     DC    A(0,0)                  ADDRESS/LENGTH OF AREA           00005760
+POINTER  DC    A(0)                    NEXT ELEMENT TO BE USED          00005770
+END      DC    A(0)                    END OF GETMAINED AREA            00005780
+RECADDR  DC    A(0)                    ADDRESS OF NEXT BUFFER           00005790
+RECLEN   DC    A(0)                    LENGTH OF RECORD, 0 IF NOTHING   00005800
+RETCODE  DC    F'0'                    RETURN CODE                      00005810
+BLKSIZE  DC    H'0'                    BLOCK SIZE OF DISK FILE          00005820
+         SPACE ,                                                        00005830
+FROM     DC    X'0000000000000000'     FIRST VALID MEMBER               00005840
+TOZERO   EQU   AREA,*-AREA,C'X'                                         00005850
+TO       DC    X'FFFFFFFFFFFFFFFF'     LAST VALID MEMBER                00005860
+FILEDEF  DS    0D                                                       00005870
+         DC    CL8'FILEDEF',CL8'DISK',CL8'DISK'                         00005880
+FILENAME DS    CL8                                                      00005890
+FILETYPE DC    CL8'IEBCOPY'            DEFAULT FILE TYPE                00005900
+FILEMODE DC    CL8'A2'                 DEFAULT FILE MODE                00005910
+GATE     DC    8X'FF'                                                   00005920
+FLAG     DC    X'00'                   FLAG                             00005930
+LOAD     EQU   X'80'                           LOAD FUNCTION            00005940
+LIST     EQU   X'40'                           LIST FUNCTION            00005950
+SORTED   EQU   X'20'                           LIST IS SORTED           00005960
+SAVEAREA DC    18A(0)        O/S SAVE AREA                              00005970
+         SPACE 2                                                        00005980
+TRKCYL   DS    F             NUMBER OF TRACKS / CYLINDER                00005990
+DEB      DS    0D            INCORE MAP OF DEB, LAST 16 BYTES OF BASIC  00006000
+DEBNMEXT DS    X             NUMBER OF EXTENTS                          00006010
+         DS    XL15          *** RESERVED ***                           00006020
+EXTENTS  DS    16XL16        UP TO 16 EXTENTS                           00006030
+         EJECT ,                                                        00006040
+BADCHARS DC    256C'$'       INVALID CHARACTER TRANSFORMATION           00006050
+         ORG   BADCHARS+C' '                                            00006060
+         DC    AL1(*-BADCHARS)                                          00006070
+         ORG   BADCHARS+C'a'                                            00006080
+         DC    9AL1(*-BADCHARS)                                         00006090
+         ORG   BADCHARS+C'j'                                            00006100
+         DC    9AL1(*-BADCHARS)                                         00006110
+         ORG   BADCHARS+C's'                                            00006120
+         DC    8AL1(*-BADCHARS)                                         00006130
+         ORG   BADCHARS+C'A'                                            00006140
+         DC    9AL1(*-BADCHARS)                                         00006150
+         ORG   BADCHARS+C'J'                                            00006160
+         DC    9AL1(*-BADCHARS)                                         00006170
+         ORG   BADCHARS+C'S'                                            00006180
+         DC    8AL1(*-BADCHARS)                                         00006190
+         ORG   BADCHARS+C'0'                                            00006200
+         DC    10AL1(*-BADCHARS)                                        00006210
+         ORG   ,                                                        00006220
+         LTORG ,             LITERAL POOL                               00006230
+         SPACE ,                                                        00006240
+         END   IEBCOPY       END OF PROGRAM                             00006250
+:READ IEBCOPY HELP
+IEBCOPY
+.sp
+  Use the IEBCOPY command to LIST or LOAD member(s) from a partitioned
+dataset, on tape created by the IEBCOPY utility (OS version), to CMS.
+.sp
+.fo off
+The format of the IEBCOPY command is :
+.sp
++----------------------------------------------------------+
+!           !                                              !
+!  IEBCOPY  !  < LIST | LOAD >  < options >                !
+!           !                                              !
+!           !  options: +           +  +          +        !
+!           !           | FTYPE  ft |  | FMODE fm |        !
+!           !           +           +  +          +        !
+!           !           +                         +        !
+!           !           | FROM   fn1 |            |        !
+!           !           +            | MEMBER fn  |        !
+!           !           | TO     fn2 |            |        !
+!           !           +                         +        !
+!           !                                              !
++----------------------------------------------------------+
+.sp
+.tr µ 40
+.fo on
+.il 5
+The IEBCOPY command requires that the tape containing the desired
+dataset is attached to your account and that a filedef for the tape
+device has been made eg. FILEDEF TAPE TAP1 SL VOLID tapename.
+For more information try HELP FILEDEF or HELP MOUNT to attach the tape.
+.sp
+where:
+.fo on
+.sp
+.sp
+.of 5
+ftµµµis the filetype given to the member(s) copied to CMS. The default
+is IEBCOPY.
+.sp
+.of 5
+fmµµµis the filemode given to the member(s) copied to CMS. The default
+is A.
+.sp
+.of 5
+fn1µµis the member name from which the LIST or LOAD is to begin with.
+The member names are sorted alphabetically. Default is to start from
+the begining of the sorted list.
+.sp
+.of 5
+fn2µµis the member name to be the last to be LISTed or LOADed.
+Default is to the end.
+.sp
+.of 5
+fnµµµindicates the name of the MEMBER to be LISTed or LOADed. Only
+one name may be given if the option MEMBER is used.
