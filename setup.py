@@ -1,7 +1,6 @@
 from setuptools import setup
 
 setup(name='xmitviewer',
-        version='0.1',
+        version='0.2',
         packages=['xmitviewer'],
-#       install_requires=['pandas']
         )
