@@ -21,7 +21,7 @@ pds.export_all()
 ## Using xmitviewer with ttk
 You can examine the contents of xmit files with ttkgui. Run from terminal:
 ```
-    python -c 'import xmitviewer;xmitviewer.Ttkgui().mainloop()'
+    python -m xmitviewer
 ```
 and open nice xmit file via button _Choose File_.
 ![Display of directory](screenshots/display_index.png)
