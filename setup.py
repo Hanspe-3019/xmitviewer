@@ -1,6 +1,7 @@
 from setuptools import setup
 
 setup(name='xmitviewer',
-        version='0.2',
+        version='1.0',
+        python_requires='>=3.6',
         packages=['xmitviewer'],
         )

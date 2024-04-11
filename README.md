@@ -9,18 +9,24 @@ Parse, View and Extract MVS XMIT Files
      pip install -e . 
 ```
 
-## Using xmitviewer from the python shell
+## Using xmitviewer
+### From the python shell
 ```python
+import xmitviewer
 pds = xmitviewer.Xmitfile(<pth>).get_pds()
 # explore the pds
 # ...
 # or
 pds.export_all()
 ```
-
-## Using xmitviewer with ttk
-You can examine the contents of xmit files with ttkgui. Run from terminal:
+### Extract all Members 
+```bash
+python -m xmitviewer -e <path to xmit-file>
 ```
+
+### Using xmitviewer with ttk
+You can examine the contents of xmit files with ttkgui. Run from terminal:
+```bash
     python -m xmitviewer
 ```
 and open nice xmit file via button _Choose File_.
