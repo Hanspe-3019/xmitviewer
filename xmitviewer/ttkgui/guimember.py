@@ -2,13 +2,12 @@
 '''Erste Tests mit tkinter
 '''
 import tkinter as tk
-import tkinter.ttk as ttk
+from tkinter import ttk
 import tkinter.filedialog
 import tkinter.scrolledtext
 import re
 
-import xmitviewer.utils.dumper as dumper
-import xmitviewer.utils.errors as errors
+from xmitviewer.utils import dumper, errors
 
 MAX_DUMPLINES = 22
 
@@ -77,7 +76,7 @@ class MemberFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
 
         self.widgets[MDATA] = tkinter.scrolledtext.ScrolledText(
             self,
-            bg='white',
+            # bg='white',
             padx=5,
             wrap=tk.NONE,
             height=24,
@@ -145,15 +144,11 @@ class MemberFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
         try:
             self.mdata = self.pds.get_memberdata(member.name)
         except errors.NodataError:
-            self.stringvars[MINFO].set(
-                '{} {}'.format(member, '*empty*')
-            )
+            self.stringvars[MINFO].set(f'{member} *empty*')
             for i in (SELCODEPAGE, BUTTON1, BUTTON0):
                 self.widgets[i].configure(state=tk.DISABLED)
         else:
-            self.stringvars[MINFO].set(
-                '{} {}'.format(member, self.mdata.datatype)
-            )
+            self.stringvars[MINFO].set(f'{member} {self.mdata.datatype}')
             if event:
                 if self.mdata.datatype in ('ebcdic', ):
                     self.current_codepage = 'cp273'
@@ -193,9 +188,7 @@ class MemberFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
         '''Display the directory in member data area.
         '''
         self.pds = pds
-        self.stringvars[MINFO].set(
-            '--- {} ---'.format('Member List')
-        )
+        self.stringvars[MINFO].set('--- Member List ---')
         self.mdata = None
         self.widgets[BUTTON0].grid_remove()
         self.widgets[BUTTON1].grid_remove()
@@ -215,15 +208,14 @@ class MemberFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
             if self.mdata.datatype == 'ebcdic' else\
             (self.mdata.datatype, None, 'wb', '')
 
-        fname_init = '{}.{}'.format(
-            self.mdata.member.name.strip(),  # len() always 8 chars!
-            ext
-        )
+        name = self.mdata.member.name.strip()  # len() always 8 chars!
+        fname_init = f'{name}.{ext}'
         fname = tkinter.filedialog.asksaveasfilename(initialfile=fname_init)
         if not fname:
             return
 
-        with open(fname, mode) as save:
+        encoding = None if mode == 'wb' else 'utf-8'
+        with open(fname, mode, encoding=encoding) as save:
             save.writelines(
                 self.mdata.get_as_records(
                     codepage=codepage,
@@ -265,17 +257,17 @@ def get_strings_in_binary_data(the_bytes, codepage):
     suppressing non printable characters.
     '''
     return '\n'.join(
-        '+{:05X} : {:s}'.format(s.start(), s.group())
+        f'+{s.start():05X} : {s.group():s}'
         for s in STRING.finditer(the_bytes.decode(codepage)))
 def get_dump_display_of_data(the_bytes, codepage):
     '''returns lines from dump display of the bytes
     '''
     dump = dumper.Dumper(codepage=codepage)
     to_display = '\n'.join(
-        '+{:03X}  {}'.format(i * 16, s)
+        f'+{i * 16:03X}  {s}'
         for i, s in enumerate(dump(the_bytes)) if i < MAX_DUMPLINES)
 
     not_shown = len(the_bytes) - MAX_DUMPLINES * 16
     if not_shown > 0:
-        to_display += '\n\n\t{} bytes more...'.format(not_shown)
+        to_display += f'\n\n\t{not_shown} bytes more...'
     return to_display

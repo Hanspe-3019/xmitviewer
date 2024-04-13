@@ -1,8 +1,8 @@
-
 '''Frame for display of PDS directory
 '''
+from pathlib import Path
 import tkinter as tk
-import tkinter.ttk as ttk
+from tkinter import ttk
 
 from xmitviewer.utils.errors import NodataError
 
@@ -37,6 +37,12 @@ class DirectoryFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
     '''
     def __init__(self, master):
         ttk.Frame.__init__(self, master)
+        style = ttk.Style()
+        if style.theme_use() == 'aqua':
+            # Fix aqua with dark mode
+            style.configure('TButton', foreground='darkgreen')
+            style.configure("TCombobox", foreground='darkgreen')
+
         self.grid(
             sticky=tk.W+tk.N,
             padx=20,
@@ -111,9 +117,13 @@ class DirectoryFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
         If EBCDIC type translate to unicode and display as text
         otherwise display in dump format.
         '''
-        i = self.widgets[MEMBERS].curselection()[0]
-        member = self.pds.members[i]
-        self.master.show_member_data(member)
+        try:
+            i = self.widgets[MEMBERS].curselection()[0]
+        except IndexError:
+            print(event) # <VirtualEvent event x=0 y=0>
+        else:
+            member = self.pds.members[i]
+            self.master.show_member_data(member)
 
     def show_directory(self):
         '''Display the directory in member data area.
@@ -134,25 +144,26 @@ class DirectoryFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
         directory = tk.filedialog.askdirectory(initialdir='.')
         if not directory:
             return
-        directory += '/'    ######### Windows?
+        directory = Path(directory)
         for member in self.pds.members:
             try:
                 memberdata = member.get_memberdata(self.pds)
             except  NodataError:
                 continue
-            (ext, codepage, mode, linesep) =\
-                ('txt', 'cp273', 'w', '\n')\
-                if memberdata.datatype == 'ebcdic' else\
-                (memberdata.datatype, None, 'wb', '')
 
-            save_path = "{:}{:}.{:}".format(
-                directory,
-                member.name.strip(),
-                ext)
+            if memberdata.datatype != 'ebcdic':
+                print(f'not saved: {member.name} {memberdata.type}')
+                continue
 
-            with open(save_path, mode) as save:
-               save.writelines(
-                   memberdata.get_as_records(
-                       codepage=codepage,
-                       linesep=linesep)
-               )
+            save_path = directory / member.name.strip()
+            with open(
+                    save_path.with_suffix('.txt'),
+                    'w', 
+                    encoding='utf-8'
+                    ) as save:
+                save.writelines(
+                    memberdata.get_as_records(
+                        codepage='cp273',
+                        linesep='\n',
+                    )
+                )
