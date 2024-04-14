@@ -118,9 +118,12 @@ class DirectoryFrame(ttk.Frame):    # pylint: disable=too-many-ancestors
         otherwise display in dump format.
         '''
         try:
+            # curselection return list of indices
+            # ListboxSelect wird auch abgefeuert, wenn außerhalb der
+            # Listbox geklickt wird !?
             i = self.widgets[MEMBERS].curselection()[0]
         except IndexError:
-            print(event) # <VirtualEvent event x=0 y=0>
+            pass
         else:
             member = self.pds.members[i]
             self.master.show_member_data(member)
